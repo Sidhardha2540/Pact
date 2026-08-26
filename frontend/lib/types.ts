@@ -29,6 +29,7 @@ export interface Discovery {
   confidence: 'unverified' | 'verified' | 'contradicted';
   created_at: string;
   superseded: boolean;
+  stale?: boolean;
 }
 
 export interface Intent {

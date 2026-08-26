@@ -36,6 +36,7 @@ class Discovery(BaseModel):
     confidence: Literal["unverified", "verified", "contradicted"] = "unverified"
     created_at: str
     superseded: bool = False
+    stale: bool = False
     sequence: Optional[int] = None    # NEW: global monotonic counter for delta state
 
 

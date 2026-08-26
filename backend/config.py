@@ -12,6 +12,9 @@ DB_PATH = SHARED_DIR / "state.db"
 LOG_PATH = SHARED_DIR / "log.jsonl"
 INBOX_PATH = SHARED_DIR / "inbox.md"
 
+# Workspace root used for file-backed discovery hash checks.
+WORKSPACE_ROOT = Path(os.environ.get("COORD_WORKSPACE_ROOT", ".")).resolve()
+
 # Defaults
 DEFAULT_INTENT_TTL_MINUTES = 10
 MAX_ACTIVE_INTENTS_PER_AGENT = 3
@@ -22,7 +25,6 @@ SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 
 # Frontend origin for CORS — Next.js dev server by default
 FRONTEND_ORIGIN = os.environ.get("COORD_FRONTEND_ORIGIN", "http://localhost:3000")
-ENABLE_DEMO_REPLAY = os.environ.get("COORD_ENABLE_DEMO_REPLAY", "0") == "1"
 
 
 def ensure_shared_dir() -> None:

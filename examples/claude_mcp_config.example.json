@@ -1,11 +1,11 @@
 {
-  "_comment": "Cursor → Settings → MCP → New MCP Server. Use these values.",
+  "_comment": "Add this block to ~/.claude/mcp_config.json, or merge it with an existing mcpServers object.",
   "mcpServers": {
     "coord": {
       "command": "python",
       "args": ["/ABSOLUTE/PATH/TO/coord/mcp-shim/shim.py"],
       "env": {
-        "COORD_AGENT_ID": "cursor",
+        "COORD_AGENT_ID": "claude-code",
         "COORD_BASE_URL": "http://127.0.0.1:49152"
       }
     }

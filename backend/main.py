@@ -34,8 +34,6 @@ import re
 import time
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
-from pathlib import Path
-import sys
 from typing import Optional
 
 from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
@@ -69,7 +67,7 @@ _limits_cache: dict[str, Limits] = {}
 
 DEFAULT_LIMITS = Limits()   # max_calls_per_min=20, max_state_size_kb=100, alert=0.8
 
-# Demo / load-test IDs like bot-0, bot-9 — not real tool identities (cursor, claude-code, …).
+# Synthetic test IDs like bot-0, bot-9 — not real tool identities (cursor, claude-code, ...).
 _SYNTHETIC_BOT_ID = re.compile(r"^bot[-_]?\d+$", re.IGNORECASE)
 
 
@@ -313,7 +311,7 @@ async def register_participant(body: ParticipantRegistration):
         raise HTTPException(
             status_code=400,
             detail={
-                "error": f"Agent ID '{body.agent_id}' is reserved for throwaway demos.",
+                "error": f"Agent ID '{body.agent_id}' is reserved for synthetic tests.",
                 "next_step": "Use your real tool identity as the agent ID. "
                              "Examples: 'cursor', 'claude-code', 'aider', 'human', 'antigravity'.",
             },
@@ -465,7 +463,7 @@ async def purge_idle_participants(
 async def remove_synthetic_bot_participants(
     x_coord_agent_id: str | None = Header(default=None),
 ):
-    """Remove participants whose ids match synthetic demo bots (``bot-9``, ``bot_0``, …).
+    """Remove participants whose ids match synthetic test agents (``bot-9``, ``bot_0``, ...).
 
     Human only. Does not remove real identities (cursor, claude-code, antigravity, …).
     """
@@ -690,27 +688,6 @@ async def post_resolve(
         question_id=question_id, resolution=body.resolution, resolved_by=agent
     )
     return _result_to_response(result)
-
-
-# ----------------------------------------------------------------------
-# Demo utilities
-# ----------------------------------------------------------------------
-
-@app.post("/api/_demo/replay")
-async def replay_demo(
-    x_coord_agent_id: str | None = Header(default=None),
-):
-    require_agent(x_coord_agent_id)
-    if not config.ENABLE_DEMO_REPLAY:
-        raise HTTPException(status_code=403, detail="Demo replay is disabled")
-
-    script = Path(__file__).resolve().parent.parent / "demo" / "seed_demo.py"
-    proc = await asyncio.create_subprocess_exec(
-        sys.executable,
-        str(script),
-        "--live",
-    )
-    return {"status": "accepted", "pid": proc.pid}
 
 
 # ----------------------------------------------------------------------

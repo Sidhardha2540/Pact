@@ -323,7 +323,7 @@ async def call_tool(name: str, args: dict[str, Any]) -> list[TextContent]:
             "agent_id": AGENT_ID,
             "type": args.get("type", "agent"),
             "task": args["task"],
-            "scope": args["scope"],
+            "scope": args.get("scope", []),
         }
         if "role_tag" in args:
             body["role_tag"] = args["role_tag"]

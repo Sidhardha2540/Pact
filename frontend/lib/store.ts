@@ -38,7 +38,6 @@ interface CoordState {
   // Triage actions (HTTP)
   answerQuestion: (id: string, answer: string) => Promise<void>;
   resolveQuestion: (id: string, resolution: string) => Promise<void>;
-  replayDemo: () => Promise<void>;
   clearAll: () => void;
 }
 
@@ -341,9 +340,6 @@ export const useCoord = create<CoordState>((set, get) => ({
   },
   resolveQuestion: async (id, resolution) => {
     await postHuman(`/api/questions/${id}/resolve`, { resolution });
-  },
-  replayDemo: async () => {
-    await postHuman('/api/_demo/replay', {});
   },
   clearAll: () => {
     set({

@@ -21,11 +21,12 @@ from __future__ import annotations
 
 import json
 import logging
+import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
-from . import storage, ws_broadcast
+from . import config, storage, ws_broadcast
 from .config import (
     DEFAULT_INTENT_TTL_MINUTES,
     MAX_ACTIVE_INTENTS_PER_AGENT,
@@ -76,6 +77,33 @@ def _uri_scope_matches(registered: str, requested: str) -> bool:
     if reg == req:
         return True
     return req.startswith(reg + "/")
+
+
+def _normalize_sha256(value: str | None) -> str | None:
+    if not value:
+        return None
+    return value.removeprefix("sha256:").strip().lower()
+
+
+def _current_file_hash(scope: str) -> str | None:
+    """Return the current sha256 for file-backed scopes, or None if not checkable."""
+    if "://" in scope:
+        return None
+
+    root = config.WORKSPACE_ROOT
+    path = (root / scope).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return None
+    if not path.is_file():
+        return None
+
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 # ----------------------------------------------------------------------
@@ -131,6 +159,18 @@ async def check_scope_permission(agent_id: str, scope: str) -> tuple[bool, str]:
             return True, mode
 
     return False, mode
+
+
+async def get_participant_mode(agent_id: str) -> str | None:
+    """Return the participant's coordination mode, or None if unregistered."""
+    conn = storage.db()
+    cur = await conn.execute(
+        "SELECT mode FROM participants WHERE agent_id = ?",
+        (agent_id,),
+    )
+    row = await cur.fetchone()
+    await cur.close()
+    return row["mode"] if row is not None else None
 
 
 # ----------------------------------------------------------------------
@@ -312,26 +352,18 @@ async def claim_intent(
 
     Returns:
       {"status": "claimed", "id": str, "expires_at": str}      on success
-      {"status": "conflict", "code": 403, ...}                  scope not owned
+      {"status": "conflict", "code": 403, ...}                  agent not registered
       {"status": "conflict", "code": 423, "existing_lease":..}  on overlap
       {"status": "conflict", "code": 429, "active_count":..}    if agent at cap
     """
-    allowed, mode = await check_scope_permission(agent, scope)
-    if not allowed:
-        if mode == "collaborative":
-            logger.info(
-                "claim_intent: agent %s claiming outside owned scope %s "
-                "(collaborative mode — allowed)", agent, scope,
-            )
-        else:
-            return {
-                "status": "conflict",
-                "code": 403,
-                "detail": f"Agent '{agent}' does not own scope '{scope}'.",
-                "next_step": f"You must own the scope before claiming an intent on it. "
-                             f"Either declare '{scope}' in register(scope=[...]) or "
-                             f"narrow your intent to a scope you already own.",
-            }
+    mode = await get_participant_mode(agent)
+    if mode is None:
+        return {
+            "status": "conflict",
+            "code": 403,
+            "detail": f"Agent '{agent}' is not registered.",
+            "next_step": "Call register(task='...') once at session start, then retry claim_intent.",
+        }
 
     # GC first so callers see an honest picture.
     await gc_expired_intents()
@@ -722,6 +754,9 @@ async def get_state(
     discoveries = [dict(r) for r in await cur.fetchall()]
     for d in discoveries:
         d["superseded"] = bool(d["superseded"])
+        current_hash = _current_file_hash(d["scope"])
+        recorded_hash = _normalize_sha256(d.get("file_hash"))
+        d["stale"] = bool(current_hash and recorded_hash and current_hash != recorded_hash)
     await cur.close()
 
     # ------------------------------------------------------------------
@@ -769,6 +804,25 @@ async def get_state(
         q["blocking"] = bool(q["blocking"])
     await cur.close()
 
+    # Include participants in full snapshots so the dashboard shows agents
+    # that registered before this WebSocket connection was opened.
+    participants: list[dict] = []
+    if not delta:
+        import json as _json
+        cur = await conn.execute(
+            "SELECT agent_id, type, task, scope, role_tag, mode, "
+            "registered_at, last_seen, status FROM participants ORDER BY registered_at ASC"
+        )
+        rows = await cur.fetchall()
+        await cur.close()
+        for r in rows:
+            p = dict(r)
+            try:
+                p["scope"] = _json.loads(p["scope"]) if isinstance(p["scope"], str) else p["scope"]
+            except Exception:
+                p["scope"] = []
+            participants.append(p)
+
     result: dict[str, Any] = {
         "decisions": decisions,
         "discoveries": discoveries,
@@ -776,6 +830,8 @@ async def get_state(
         "questions": questions,
         "current_id": current_id,
     }
+    if not delta:
+        result["participants"] = participants
     if delta:
         result["since_id"] = since_id
 

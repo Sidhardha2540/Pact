@@ -27,6 +27,7 @@ inbox.md
 Thumbs.db
 
 # IDE
+.cursor/
 .vscode/
 .idea/
 *.swp
@@ -36,6 +37,6 @@ Thumbs.db
 ~$*.docx
 docgen/
 screenshots/
-demo/claude_mcp_config.json
-demo/cursor_mcp_config.json
+examples/claude_mcp_config.json
+examples/cursor_mcp_config.json
 frontend/tsconfig.tsbuildinfo

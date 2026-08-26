@@ -28,7 +28,7 @@ A single-process **coordination daemon** running on `127.0.0.1:49152` that holds
 | **Intent**    | TTL Lease             | "I'm working on X" — auto-expires, prevents collisions.  |
 | **Question**  | Append + Status       | Blockers escalated to the human or another agent.        |
 
-Agents talk to the daemon through **8 named MCP tools** (no generic `sync()`). Conflicts return structured codes (`409`, `410`, `423`) so agents can react mechanically.
+Agents talk to the daemon through **9 named MCP tools** (no generic `sync()`). Conflicts return structured codes (`403`, `409`, `423`, `429`) so agents can react mechanically.
 
 A **web dashboard** streams every event live over WebSocket — the developer sees what's happening, triages conflicts, answers questions.
 
@@ -64,15 +64,16 @@ A **web dashboard** streams every event live over WebSocket — the developer se
 
 1. **Single source of truth.** Only the daemon writes to disk. No two agents race for `state.json`.
 2. **MCP shims per agent.** Each agent gets its own stdio MCP process so identity is implicit. No spoofing.
-3. **HTTP between shim and daemon.** Standard, debuggable, allows non-MCP agents (REST clients, CLI scripts) to participate.
-4. **WebSocket for the UI.** The dashboard is a passive observer — it never writes. Demo mode replays events.
+3. **HTTP between shim and daemon.** Standard, debuggable, allows non-MCP agents and REST clients to participate.
+4. **WebSocket for the UI.** The dashboard observes live state and only writes when a human answers or resolves a question.
 5. **SQLite + JSONL.** State for queries, log for audit. SQLite WAL mode + `asyncio.Lock` serialization prevents corruption. JSONL append uses `fsync` for durability.
 
-## The 8 Tools
+## The 9 Tools
 
 ```
+register(task, scope=None, mode="exclusive")       → 200 (session registration)
 read_state(scope_filter=None)                      → snapshot of all four stores
-claim_intent(scope, action, ttl_minutes=10)        → 200 | 409 (overlap)
+claim_intent(scope, action, ttl_minutes=10)        → 200 | 423 (overlap)
 release_intent(intent_id)                          → 200
 commit_decision(scope, key, value, rationale=None) → 200 | 409 (FWW conflict)
 share_discovery(scope, summary, file_hash, conf)   → 200 (auto-supersedes prior)
@@ -80,6 +81,14 @@ raise_question(scope, asks, target, blocking=True) → 200 (queues to inbox)
 answer_question(question_id, answer)               → 200
 resolve_question(question_id, resolution)          → 200
 ```
+
+Typical agent flow:
+
+1. `register(task="...")`
+2. `read_state(scope_filter="...")`
+3. `claim_intent(scope="...", action="...")`
+4. Share decisions, discoveries, and questions while working.
+5. `release_intent(intent_id="...")` when the scope is done.
 
 ## Repo Layout
 
@@ -116,10 +125,12 @@ coord/
 │   │   └── types.ts
 │   └── package.json
 │
-├── demo/
-│   ├── seed_demo.py
+├── examples/
 │   ├── claude_mcp_config.example.json
 │   └── cursor_mcp_config.example.json
+│
+├── tests/                # API-level coordination behavior tests
+│   └── test_coord_api.py
 │
 ├── .shared/              # Runtime state (gitignored)
 │   ├── state.db
@@ -127,7 +138,6 @@ coord/
 │   └── inbox.md          # Human-readable mirror
 │
 ├── ARCHITECTURE.md       # Deeper rationale
-├── CURSOR_INSTRUCTIONS.md# What Cursor finishes
 └── README.md
 ```
 
@@ -161,6 +171,21 @@ npm run dev
 }
 ```
 
+## Quality Checks
+
+```bash
+# Backend API behavior
+python -m unittest discover -s tests
+
+# Python syntax
+python -m compileall backend mcp-shim tests
+
+# Frontend type safety and linting
+cd frontend
+npm run typecheck
+npm run lint
+```
+
 ## Status
 
-This repo contains the **architectural base** — daemon core, state engine with all four consistency models, MCP shim, dashboard skeleton. The remaining work (frontend polish, demo seeding, end-to-end test) is described in `CURSOR_INSTRUCTIONS.md`.
+This repo contains the daemon core, state engine, MCP shim, dashboard, setup examples, and API-level tests for the main coordination semantics. Runtime state lives under `.shared/` and is intentionally ignored by Git.
